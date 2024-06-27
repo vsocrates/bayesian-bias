@@ -227,3 +227,6 @@ brush_outputs/
 
 # ignore slurm output  scripts
 *.out
+
+.env
+all_cases_clean.csv

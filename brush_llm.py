@@ -4,7 +4,7 @@
 #######################
 ### System Settings ###
 #######################
-TESTRUN = True
+TESTRUN = False
 VERSION = "sensspec_v3"
 WRITEOUT = True
 EXPERIMENT = "est_sensspec"
@@ -12,7 +12,7 @@ EDITRACE = True
 TRIALS = 6
 
 if TESTRUN:
-    TRIALS = 1
+    TRIALS = 2
 
 # races = ["American Indian", "Asian", "African American", "Hispanic", "Pacific Islander", "White"]
 races = ["African American", "White", "African American", "White", "African American", "White"]
@@ -73,7 +73,8 @@ from llm_funcs import compute_true_bayesian_update
 #######################
 
 # load env variables
-load_dotenv('/vast/palmer/home.mccleary/vs428/Documents/DischargeMe/hail-dischargeme/.env')
+# load_dotenv('/vast/palmer/home.mccleary/vs428/Documents/DischargeMe/hail-dischargeme/.env')
+load_dotenv("/Users/vsocrates/Documents/Yale/Bayesian/bayesian-bias/.env")
 
 # set up azure OpenAI 
 engine = "decile-gpt-4-128K"
@@ -84,7 +85,8 @@ os.environ["OPENAI_API_VERSION"] = "2023-12-01-preview"
 #######################
 ##### Read Data #######
 #######################
-data = pd.read_csv("/home/vs428/project/Uncertainty_data/all_cases_clean.csv", sep="|",  engine="c")
+# data = pd.read_csv("/home/vs428/project/Uncertainty_data/all_cases_clean.csv", sep="|",  engine="c")
+data = pd.read_csv("/Users/vsocrates/Documents/Yale/Bayesian/bayesian-bias/all_cases_clean.csv", sep="|",  engine="c")
 prompts = pd.read_csv("prompts.csv")
 
 # fix the weird unicode errors
