@@ -1,0 +1,37 @@
+experiment,step,prompt_template
+baseline,pretest,"{case}
+
+{question1} Let's think step by step. First, explain your reasoning, and then give your answer. {format_instructions}"
+baseline,posttest,"{labresult}
+
+{question2} Let's think step by step. First, explain your reasoning, and then give your answer. {format_instructions}"
+baseline,output_instructions,"Your response should be a SINGLE numerical probability estimate in the form of `The likelihood of [condition] is [number]%.` DO NOT give a range."
+no_reasoning,pretest,"{case}
+
+{question1} Let's think step by step. Think through your reasoning but do not include it in your answer. Your answer SHOULD ONLY include your final probability estimate. {format_instructions}"
+no_reasoning,posttest,"{labresult}
+
+{question2} Let's think step by step. Think through your reasoning but do not include it in your answer. Your answer SHOULD ONLY include your final probability estimate. {format_instructions}"
+no_reasoning,output_instructions,"Your response should be a SINGLE numerical probability estimate in the form of `The likelihood of [condition] is [number]%.` DO NOT give a range."
+noLR,pretest,"{case}
+
+{question1} Let's think step by step. First, explain your reasoning, and then give your answer. {format_instructions}"
+noLR,posttest,"{labresult}
+
+{question2} Let's think step by step. First, explain your reasoning, and then give your answer. {format_instructions}"
+noLR,output_instructions,"Your response should be a SINGLE numerical probability estimate in the form of `The likelihood of [condition] is [number]%.` DO NOT give a range."
+no_LRreasoning,pretest,"{case}
+
+{question1} Let's think step by step. Think through your reasoning but do not include it in your answer. Your answer SHOULD ONLY include your final probability estimate. {format_instructions}"
+no_LRreasoning,posttest,"{labresult}
+
+{question2} Let's think step by step. Think through your reasoning but do not include it in your answer. Your answer SHOULD ONLY include your final probability estimate. {format_instructions}"
+no_LRreasoning,output_instructions,"Your response should be a SINGLE numerical probability estimate in the form of `The likelihood of [condition] is [number]%.` DO NOT give a range."
+est_sensspec,pretest,"{case}
+
+{question1} Let's think step by step. Think through your reasoning but do not include it in your answer. Your answer SHOULD ONLY include your final probability estimate. {format_instructions}"
+est_sensspec,posttest,"{labresult}
+
+{question2} Use the sensitivity and specificity you estimated to compute a likelihood ratio. First, think step by step. Think through your reasoning but do not include it in your answer. Your answer SHOULD ONLY include your final probability estimate. {format_instructions}"
+est_sensspec,output_instructions,"Your response should be a SINGLE numerical probability estimate in the form of `The likelihood of [condition] is [number]%.` DO NOT give a range."
+est_sensspec,likelihood,"Given the patient information above, estimate the sensitivity and specificity of {labtest} for patients similar to this one. Use only the information provided in the patient description, including but not limited to, their demographics, history, presentation, PMH and vitals. You MUST estimate the sensitivity/specificity specific to patients like this one to the best of your ability. Your response should be in the form: `The sensitivity is [number]% and the specificity is [number]%`"
