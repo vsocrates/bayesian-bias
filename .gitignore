@@ -230,3 +230,5 @@ brush_outputs/
 
 .env
 all_cases_clean.csv
+*.tiff
+*.svg

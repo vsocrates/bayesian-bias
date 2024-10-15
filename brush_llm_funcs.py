@@ -1,244 +1,106 @@
 import re
+import random
 import numpy as np
+import argparse 
 
 from langchain_openai import AzureChatOpenAI
-	
+
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain.memory import ChatMessageHistory
-
-from langchain.prompts.chat import ChatPromptTemplate
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
-from langchain.prompts.chat import ChatPromptTemplate, HumanMessagePromptTemplate
-from llm_funcs import completion_with_backoff
+from langchain.memory import ChatMessageHistory
 
-import random
+from langchain.prompts.chat import HumanMessagePromptTemplate
 
-def brush_prob_llm(chain, data, 
-                           pretest_template, posttest_template, format_instructions, 
-                           positive,
-                           lr,
-                           trial_num,
-                           race=None,
-                           verbose=False,
-                           ):
+from llm_funcs import completion_with_backoff, compute_true_bayesian_update
+
+
+def brush_prob_est_sensspec_llm(runnable_with_history,
+                                case,
+                                templates,
+                                parsers,
+                                reasoning_instructions,                                
+                                positive,
+                                race,
+                                vignette_id,
+                                trial_num,
+                                est_lr,
+                                verbose=False
+                               ):
     
     '''Runs the LLM on all the JBrush data for either `positive` or `negative` lab results. 
 
-    data: self explanatory
-    pretest_templat: self explanatory
-    posttest_template: self explanatory
-    format_instructions: self explanatory
-    positive: whether or not all the examples should have positive or negative test results
-    lr: whether or not to include the likelihood ratio information
-    race: If we want to run race experiments, we would add the race in here
+    runnable_with_history: the LangChain Runnable with History
+    case: The case being analyzed
+    templates: The dict of templates (incl. pretest, posttest, and maybe LR)
+    parsers: The dict of parsers (incl. probability and maybe LR)
+    reasoning_instructions: The dict of reasoning instructions (incl. pretest/posttest)
+    positive: Whether the test is positive or negative
+    race: The race being evaluated (or None)
+    vignette_id: The Vignette ID (used as the patient_id)
+    trial_num: The Trial # (used as part of the conversation_id, with race)
+    est_lr: One of "estimate", "none", "original" that determines how I handle the lr_text
+    verbose: How much output to give
     '''    
-    chat_histories = []
     
-    for data_idx, case in data.iterrows():
-        print(f"Current row: {data_idx}", flush=True)
-
-        # preprocess function adds in all of the races, positive/negative lab values, LR text
-        labresult, case_text = preprocess_case(case, positive, lr, race)
-        
-        # create chat history object to update Bayesian estimates
-        chat_history = ChatMessageHistory()
-        
-        # create prompt from template
-        pretest_prompt = HumanMessagePromptTemplate.from_template(pretest_template)
-
-        # add to history
-        chat_history.add_user_message(
-            pretest_prompt.format(
-                case=case_text,
-                question1=case['q1'],
-                condition=case['case_type'],
-                format_instructions=format_instructions,
-                )
+    labresult, case_text = preprocess_case(case=case, positive=positive, race=race)
+    positive_text = "pos" if positive else "neg"
+    # pretest
+    try:
+        runnable_with_history.invoke(
+            [
+                templates['pretest'].format(case=case_text, 
+                                    question1=case['q1'], 
+                                    reasoning_instructions=reasoning_instructions['pretest'],
+                                    format_instructions=parsers['prob'].get_format_instructions()
+                                   )
+            ],
+            config={"configurable": {"patient_id": str(vignette_id),
+                                    "conversation_id": f"{str(race)}-{str(trial_num)}-{positive_text}"}},
         )
+    except Exception as ve:
+        print(f'Issue getting a response back')
         
-        # confirm that this is the right text
-        if verbose:
-            print(chat_history.messages[0].content)
         
-        # run the pre-test probability prompt
-        pretest_response = completion_with_backoff(chain,
-            {
-                "messages": chat_history.messages,
-            }
-        )
-        
-        # add it to the history for the next question
-        chat_history.add_ai_message(pretest_response)
-        
-        if verbose:
-            print(pretest_response.content)
-        
-        # create prompt from template
-        posttest_prompt = HumanMessagePromptTemplate.from_template(posttest_template)
-        
-        # add to history
-        chat_history.add_user_message(
-            posttest_prompt.format(
-                labresult=labresult,
-                question2=case['q2'],
-                condition=case['case_type'],
-                format_instructions=format_instructions)
-        )
-        
-        # check user message
-        if verbose:
-            print(chat_history.messages[2].content)
-        
-        # run posttest prompt
-        posttest_response  = completion_with_backoff(
-            chain,
-            {
-                "messages": chat_history.messages,
-            }
-        )
-        
-        # add it to the history for the next question
-        chat_history.add_ai_message(posttest_response)
-        
-        if verbose:
-            print(posttest_response.content)    
-        
-        chat_histories.append(chat_history)
-
-        if verbose:
-            print("================================\n")
-            print(chat_history)
-            print("================================\n\n\n")
-    return chat_histories
-
-
-def brush_prob_est_sensspec_llm(chain, data, 
-                           pretest_template, posttest_template, likelihood_template,  format_instructions, 
-                           positive,
-                           trial_num,
-                           race=None,
-                           verbose=False,
-                           ):
-    
-    '''Runs the LLM on all the JBrush data for either `positive` or `negative` lab results. 
-
-    data: self explanatory
-    pretest_templat: self explanatory
-    posttest_template: self explanatory
-    format_instructions: self explanatory
-    positive: whether or not all the examples should have positive or negative test results
-    race: If we want to run race experiments, we would add the race in here
-    '''    
-    chat_histories = []
-    
-    for data_idx, case in data.iterrows():
-        print(f"Current row: {data_idx}", flush=True)
-
-        # preprocess function adds in all of the races, positive/negative lab values, LR text
-        # we assume that LR is false, given that we're estimating it below
-        labresult, case_text = preprocess_case(case, positive, False, race)
-        
-        # create chat history object to update Bayesian estimates
-        chat_history = ChatMessageHistory()
-        
-        # create prompt from template
-        pretest_prompt = HumanMessagePromptTemplate.from_template(pretest_template)
-
-        # add to history
-        chat_history.add_user_message(
-            pretest_prompt.format(
-                case=case_text,
-                question1=case['q1'],
-                condition=case['case_type'],
-                format_instructions=format_instructions,
-                )
-        )
-        
-        # confirm that this is the right text
-        if verbose:
-            print(chat_history.messages[0].content)
-        
-        # run the pre-test probability prompt
-        pretest_response = completion_with_backoff(chain,
-            {
-                "messages": chat_history.messages,
-            }
-        )
-        
-        # add it to the history for the next question
-        chat_history.add_ai_message(pretest_response)
-        
-        if verbose:
-            print(pretest_response.content)
-
-        # create prompt from template
-        lr_prompt = HumanMessagePromptTemplate.from_template(likelihood_template)
-        # add to history
-        chat_history.add_user_message(
-            lr_prompt.format(
-                labtest=get_labtest_by_case(case['case_type'])
+    if est_lr == "estimate":
+        # estimate sensitivity/specificity for likelihood ratio
+        labtest = get_labtest_by_case(case['case_type'])
+        try:
+            runnable_with_history.invoke(
+                [
+                    templates['lr'].format(labtest=labtest, 
+                                        format_instructions=parsers['lr'].get_format_instructions()
+                                       )
+                ],
+                config={"configurable": {"patient_id": str(vignette_id),
+                                        "conversation_id": f"{str(race)}-{str(trial_num)}-{positive_text}"}},
             )
+        except Exception as ve:
+            print(f'Issue getting a response back')
+        
+    
+    # posttest
+    # if we are testing sens/spec estimation or we don't want to include LR info, we want to use no lr_info
+    # otherwise we do
+    try:    
+        runnable_with_history.invoke(
+            [
+                templates['posttest'].format(labresult=labresult, 
+                                    question2=case['q2'], 
+                                    reasoning_instructions=reasoning_instructions['posttest'],                         
+                                    lr_info="" if (est_lr == "estimate") | (est_lr == "none") else case['lr_text'], 
+                                    format_instructions=parsers['prob'].get_format_instructions()
+                                   )
+            ],
+            config={"configurable": {"patient_id": str(vignette_id),
+                                    "conversation_id": f"{str(race)}-{str(trial_num)}-{positive_text}"}},
         )
-        
-        # check user message
-        if verbose:
-            print(chat_history.messages[2].content)
-        
-        # run likelihood ratio prompt
-        lr_response  = completion_with_backoff(
-            chain,
-            {
-                "messages": chat_history.messages,
-            }
-        )
-        # add it to the history for the next question
-        chat_history.add_ai_message(lr_response)
-        
-        if verbose:
-            print(lr_response.content)    
-        
-        # create prompt from template
-        posttest_prompt = HumanMessagePromptTemplate.from_template(posttest_template)
-        
-        # add to history
-        chat_history.add_user_message(
-            posttest_prompt.format(
-                labresult=labresult,
-                question2=case['q2'],
-                condition=case['case_type'],
-                format_instructions=format_instructions)
-        )
-        
-        # check user message
-        if verbose:
-            print(chat_history.messages[4].content)
-        
-        # run posttest prompt
-        posttest_response  = completion_with_backoff(
-            chain,
-            {
-                "messages": chat_history.messages,
-            }
-        )
-        
-        # add it to the history for the next question
-        chat_history.add_ai_message(posttest_response)
-        
-        if verbose:
-            print(posttest_response.content)    
-        
-        chat_histories.append(chat_history)
-
-        # if verbose:
-        print("================================\n")
-        print(chat_history)
-        print("================================\n\n\n")
-    return chat_histories
+    except Exception as ve:
+        print(f'Issue getting a response back')
 
 
-def preprocess_case(case, positive, lr, race):
+def preprocess_case(case, positive, race):
     if positive:
         if case['case_type'] == "ACS":
             labresult = case['lab_value_text'].replace("[normal or abnormal]", "abnormal")
@@ -248,7 +110,7 @@ def preprocess_case(case, positive, lr, race):
             ddimer = random.randint(500,600)
             labresult = case['lab_value_text'].replace("< >", str(ddimer))
             labresult = labresult.replace("<>", "positive")
-        elif case['case_type'] == "PNEUMONIA":
+        elif case['case_type'] == "Pneumonia":
             labresult = case['lab_value_text'].replace("[with/without]", "with")
         else:
             raise Exception(f"Incorrect case type: {case['case_type']}")
@@ -261,14 +123,10 @@ def preprocess_case(case, positive, lr, race):
             ddimer = random.randint(0, 499)
             labresult = case['lab_value_text'].replace("< >", str(ddimer))
             labresult = labresult.replace("<>", "negative")
-        elif case['case_type'] == "PNEUMONIA":
+        elif case['case_type'] == "Pneumonia":
             labresult = case['lab_value_text'].replace("[with/without]", "without")                
         else:
             raise Exception(f"Incorrect case type: {case['case_type']}")
-
-    # if the experiment type includes LR, then we add that in when giving the LLM the lab results
-    if lr:
-        labresult = labresult + " " + case['lr_text']
 
     # if race needs to be edited: 
     if race:
@@ -278,71 +136,76 @@ def preprocess_case(case, positive, lr, race):
 
     return labresult, case_text
 
+def postprocess_case(case, convo_history, parsers, pos, est_lr):
+    # If we are running the experiment with estimating sens./spec.
+    if est_lr == "estimate":
+        pretest_mess_num = 2
+        posttest_mess_num = 6
+        likelihood_mess_num = 4
+        sensspec = brush_get_sensspec_from_llm(convo_history, parsers['lr'], 
+                                                 likelihood_mess_num=likelihood_mess_num)
+    
+    # If we are using the LR in the vignette
+    else:
+        # TODO: Double check this! 
+        pretest_mess_num = 2
+        posttest_mess_num = 4
+        sensspec = None
+        
+    pretest_prob, posttest_prob = brush_get_probs_from_llm(convo_history, parsers['prob'], 
+                                                             pretest_mess_num=pretest_mess_num, 
+                                                             posttest_mess_num=posttest_mess_num)
+
+    # Get the text of the conversation for debugging after
+    convo_text = "\n".join([x.pretty_repr() for x in convo_history.messages])
+
+    # Get the true posttest prob from pretest prob
+    if pretest_prob.prob_estimate == "PARSEERROR":
+        true_posttest = "PARSEERROR"
+    else:
+        true_posttest = compute_true_bayesian_update(pretest_prob.prob_estimate/100, case['pos_lr'] if pos else case['neg_lr']) * 100
+
+    return sensspec, pretest_prob, posttest_prob, convo_text, true_posttest
+
+
 def get_labtest_by_case(case_type):
     if case_type == "ACS":
         return "troponin test"
     elif case_type == "CHF":
         return "chest x-ray"
-    elif case_type == "PNEUMONIA":
+    elif case_type == "Pneumonia":
         return "chest x-ray"
     elif case_type == "Pulmonary Embolism":
         return "quantitative d-dimer"
     else:
         raise Exception("Not valid case type!")
 
-def parse_percentage(ai_message: AIMessage) -> str:
-    """Parse the AI message."""
-    try:
-        return float(re.compile(r'[-+]?(\d*\.*\d+)%').findall(ai_message.content)[-1])
-    except (ValueError, IndexError) as e:
-        return np.nan
-        # raise Exception("No number at end of string: ", ai_message.content)
-
-def parse_last2_percentages(ai_message: AIMessage) -> str:
-    """Parse the AI message and get the last two percentages"""
-    try:
-        return float(re.compile(r'[-+]?(\d*\.*\d+)%').findall(ai_message.content)[-1]), float(re.compile(r'[-+]?(\d*\.*\d+)%').findall(ai_message.content)[-2])
-    except (ValueError, IndexError) as e:
-        return np.nan, np.nan
-
-        # raise Exception("No number at end of string")
-
-def brush_get_probs_from_llm(chat_histories, pretest_mess_num=1, posttest_mess_num=3):
+def brush_get_probs_from_llm(history, parser, pretest_mess_num=1, posttest_mess_num=3):
     '''Get the estimated probabilities from the LLM
     '''
-    pretest_probs = []
-    posttest_probs = []
-    
-    for history in chat_histories:
-        pretest_probs.append(parse_percentage(history.messages[pretest_mess_num]))
-        posttest_probs.append(parse_percentage(history.messages[posttest_mess_num]))
 
-    return pretest_probs, posttest_probs
+    try:
+        pretest_prob = parser.parse(history.messages[pretest_mess_num].content)
+    except:
+        pretest_prob = argparse.Namespace()
+        pretest_prob.prob_estimate = "PARSEERROR"
+    try:
+        posttest_prob = parser.parse(history.messages[posttest_mess_num].content)
+    except:
+        posttest_prob = argparse.Namespace()
+        posttest_prob.prob_estimate = "PARSEERROR"
+        
+    return pretest_prob, posttest_prob
 
-def brush_get_llm_responses(chat_histories, pretest_mess_num=1, posttest_mess_num=3):
-    '''Get the AI responses from the LLM for quality checks afterwards
-    '''
-    
-    pretest_text = []
-    posttest_text = []
-    
-    for history in chat_histories:
-        pretest_text.append(history.messages[pretest_mess_num].content)
-        posttest_text.append(history.messages[posttest_mess_num].content)
-
-    return pretest_text, posttest_text
-
-def brush_get_sensspec_from_llm(chat_histories, likelihood_mess_num=3):
+def brush_get_sensspec_from_llm(history, parser, likelihood_mess_num=3):
     '''Get the sensitivity/specificity for a lab test from the LLM
     '''
-    senses = []
-    specs = []
-    
-    for history in chat_histories:
-        print(len(history.messages))
-        sens, spec = parse_last2_percentages(history.messages[likelihood_mess_num])
-        senses.append(sens)
-        specs.append(spec)
-
-    return senses, specs
+    try:
+        sensspec = parser.parse(history.messages[likelihood_mess_num].content)
+    except:
+        sensspec = argparse.Namespace()
+        sensspec.sensitivity = "PARSEERROR"
+        sensspec.specificity = "PARSEERROR"
+        
+    return sensspec
     

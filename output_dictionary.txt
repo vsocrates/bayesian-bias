@@ -1,0 +1,6 @@
+all_cases_posneg_gpt4_output_sensspec_v2.csv = Test file
+all_cases_posneg_gpt4_output_sensspec_v3.csv = Full run v1
+all_cases_posneg_gpt4_output_sensspec_v4.csv = Full run v2 (don't know what the difference was)
+all_cases_posneg_gpt4_output_sensspec_v5.csv = Full run with sens/spec explained reasoning
+ - prompt: "Given the patient information above, estimate the sensitivity and specificity of {labtest} for patients similar to this one. Use the information provided in the patient description as well as your own judgement. You MUST estimate the sensitivity/specificity SPECIFIC to patients like this one with whatever information you have as a SINGLE numerical value. DO NOT provide a range. Your response should be in the form: `The sensitivity is [number]% and the specificity is [number]%`. First, think step-by-step, explain your reasoning, and then finally provide your estimates."
+"
